@@ -15,15 +15,9 @@ metadata:
     k8s-app: fluentd-es
     addonmanager.kubernetes.io/mode: Reconcile
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - "namespaces"
-  - "pods"
-  verbs:
-  - "get"
-  - "watch"
-  - "list"
+- apiGroups: [""]
+  resources: ["namespaces", "pods", "pods/logs"]
+  verbs: ["get", "watch", "list"]
 ---
 kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
@@ -36,11 +30,10 @@ subjects:
 - kind: ServiceAccount
   name: fluentd-es
   namespace: efklog
-  apiGroup: ""
 roleRef:
   kind: ClusterRole
   name: fluentd-es
-  apiGroup: ""
+  apiGroup: rbac.authorization.k8s.io
 ---
 apiVersion: apps/v1
 kind: DaemonSet
@@ -61,13 +54,16 @@ spec:
       labels:
         k8s-app: fluentd-es
         version: v2.7.0
-      # This annotation ensures that fluentd does not get evicted if the node
-      # supports critical pod annotation based priority scheme.
-      # Note that this does not guarantee admission on the nodes (#40573).
       annotations:
         scheduler.alpha.kubernetes.io/critical-pod: ''
     spec:
       serviceAccountName: fluentd-es
+      securityContext:
+        # Run containers as non-root user for improved security
+        runAsUser: 1000
+        runAsGroup: 3000
+        fsGroup: 2000
+        readOnlyRootFilesystem: true  
       containers:
       - name: fluentd-es
         image: quay.io/fluentd_elasticsearch/fluentd:v2.7.0
@@ -76,6 +72,7 @@ spec:
           value: --no-supervisor -q
         resources:
           limits:
+            cpu: "1"
             memory: 500Mi
           requests:
             cpu: 100m
