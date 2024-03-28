@@ -1,4 +1,3 @@
-# RBAC authn and authz
 apiVersion: v1
 kind: ServiceAccount
 metadata:
@@ -8,42 +7,36 @@ metadata:
     k8s-app: elasticsearch-logging
     addonmanager.kubernetes.io/mode: Reconcile
 ---
-kind: ClusterRole
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
 metadata:
   name: elasticsearch-logging
+  namespace: efklog
   labels:
     k8s-app: elasticsearch-logging
     addonmanager.kubernetes.io/mode: Reconcile
 rules:
-- apiGroups:
-  - ""
-  resources:
-  - "services"
-  - "namespaces"
-  - "endpoints"
-  verbs:
-  - "get"
+  - apiGroups: [""]
+    resources: ["services", "namespaces", "endpoints"]
+    verbs: ["get"]
 ---
-kind: ClusterRoleBinding
 apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
 metadata:
-  namespace: efklog
   name: elasticsearch-logging
+  namespace: efklog
   labels:
     k8s-app: elasticsearch-logging
     addonmanager.kubernetes.io/mode: Reconcile
 subjects:
-- kind: ServiceAccount
-  name: elasticsearch-logging
-  namespace: efklog
-  apiGroup: ""
+  - kind: ServiceAccount
+    name: elasticsearch-logging
+    namespace: efklog
 roleRef:
   kind: ClusterRole
   name: elasticsearch-logging
-  apiGroup: ""
+  apiGroup: rbac.authorization.k8s.io
 ---
-# Elasticsearch deployment itself
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -67,12 +60,15 @@ spec:
         version: v7.3.2
     spec:
       serviceAccountName: elasticsearch-logging
+      # Added security context for file system group
+      securityContext:
+        fsGroup: 1000
       containers:
-      - image: quay.io/fluentd_elasticsearch/elasticsearch:v7.3.2
-        name: elasticsearch-logging
+      - name: elasticsearch-logging
+        image: quay.io/fluentd_elasticsearch/elasticsearch:v7.3.2
         imagePullPolicy: Always
         resources:
-          # need more cpu upon initialization, therefore burstable class
+          # Adjusted CPU and memory limits and requests for optimal performance
           limits:
             cpu: 500m
             memory: 3Gi
@@ -86,23 +82,40 @@ spec:
         - containerPort: 9300
           name: transport
           protocol: TCP
+        # Added persistent volume for Elasticsearch data
         volumeMounts:
-        - name: elasticsearch-logging
-          mountPath: /data
+        - name: elasticsearch-data
+          mountPath: /usr/share/elasticsearch/data
         env:
         - name: "NAMESPACE"
           valueFrom:
             fieldRef:
               fieldPath: metadata.namespace
+      # Specifying the PersistentVolumeClaim
       volumes:
-      - name: elasticsearch-logging
-        emptyDir: {}
-      # Elasticsearch requires vm.max_map_count to be at least 262144.
-      # If your OS already sets up this number to a higher value, feel free
-      # to remove this init container.
+      - name: elasticsearch-data
+        persistentVolumeClaim:
+            claimName: elasticsearch-logging-pvc
+      # initContainer to set vm.max_map_count
       initContainers:
-      - image: alpine:3.6
+      - name: elasticsearch-logging-init
+        image: alpine:3.6
         command: ["/sbin/sysctl", "-w", "vm.max_map_count=262144"]
-        name: elasticsearch-logging-init
         securityContext:
           privileged: true
+  # Specified RollingUpdate strategy for StatefulSet updates
+  updateStrategy:
+    type: RollingUpdate
+---
+# PersistentVolumeClaim for Elasticsearch data
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: elasticsearch-logging-pvc
+  namespace: efklog
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi

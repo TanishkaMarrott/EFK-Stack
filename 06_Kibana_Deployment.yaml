@@ -7,7 +7,7 @@ metadata:
     k8s-app: kibana-logging
     addonmanager.kubernetes.io/mode: Reconcile
 spec:
-  replicas: 1
+  replicas: 2 # Increased replicas for high availability
   selector:
     matchLabels:
       k8s-app: kibana-logging
@@ -18,25 +18,48 @@ spec:
       annotations:
         seccomp.security.alpha.kubernetes.io/pod: 'docker/default'
     spec:
+      securityContext:
+        runAsUser: 1000
+        runAsNonRoot: true # Running as non-root for enhanced security
       containers:
       - name: kibana-logging
         image: docker.elastic.co/kibana/kibana-oss:7.3.2
         resources:
-          # need more cpu upon initialization, therefore burstable class
           limits:
             cpu: 1000m
+            memory: "2Gi" # Added memory limit
           requests:
             cpu: 100m
+            memory: "1Gi" # Added memory request
         env:
           - name: ELASTICSEARCH_HOSTS
             value: http://elasticsearch-logging:9200
           - name: SERVER_NAME
             value: kibana-logging
-         # - name: SERVER_BASEPATH
-         #   value: /api/v1/namespaces/efk-aks/services/kibana-logging/proxy
+          # - name: SERVER_BASEPATH
+          #   value: /api/v1/namespaces/efk-aks/services/kibana-logging/proxy
           - name: SERVER_REWRITEBASEPATH
             value: "false"
         ports:
         - containerPort: 5601
           name: ui
           protocol: TCP
+        livenessProbe: # Added liveness probe
+          httpGet:
+            path: /api/status
+            port: ui
+          initialDelaySeconds: 60
+          periodSeconds: 10
+        readinessProbe: # Added readiness probe
+          httpGet:
+            path: /api/status
+            port: ui
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        volumeMounts:
+        - name: kibana-data # Mounting persistent volume
+          mountPath: /usr/share/kibana/data
+      volumes:
+      - name: kibana-data # Persistent volume claim for Kibana data
+        persistentVolumeClaim:
+          claimName: kibana-pvc
