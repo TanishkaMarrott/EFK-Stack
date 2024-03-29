@@ -1,6 +1,9 @@
----
 apiVersion: v1
 kind: Namespace
 metadata:
-   name: efklog
-...
+  name: efklog
+  labels:
+    environment: production
+    team: logging
+  annotations:
+    description: "Namespace for EFK (Elasticsearch, Fluentd, Kibana) logging stack"

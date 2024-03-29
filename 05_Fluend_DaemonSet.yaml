@@ -63,7 +63,6 @@ spec:
         runAsUser: 1000
         runAsGroup: 3000
         fsGroup: 2000
-        readOnlyRootFilesystem: true  
       containers:
       - name: fluentd-es
         image: quay.io/fluentd_elasticsearch/fluentd:v2.7.0
