@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: sysctl-modifier
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: sysctl-modifier
+  template:
+    metadata:
+      labels:
+        name: sysctl-modifier
+    spec:
+      hostPID: true
+      containers:
+      - name: sysctl
+        image: busybox
+        imagePullPolicy: IfNotPresent
+        command: ["nsenter", "-t", "1", "-m", "-u", "-n", "-i", "--", "sysctl", "-w", "vm.max_map_count=262144"]
+        securityContext:
+          privileged: true
+      tolerations:
+      - key: node-role.kubernetes.io/master
+        effect: NoSchedule
